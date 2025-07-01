@@ -1,4 +1,5 @@
-version : '3.8'
+version: "3.8"
+
 services:
   db:
     image: postgres:latest
@@ -10,22 +11,22 @@ services:
       - "5433:5432"
     volumes:
       - minify-data:/var/lib/postgresql/data
-  app: 
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  app:
     build: .
     environment:
-      DATABASE_URL: postgres://mini_user:superdupersecret@db:5432/mini
+      DATABASE_URL: postgres://mini_user:superdupersecret@db:5432/mini?sslmode=disable
       REDIS_URL: redis://redis:6379
     ports:
       - "8080:8080"
     depends_on:
       - db
       - redis
-  redis: 
-    image: redis:latest
-    ports:
-      - "6379:6379"
-    
 
 volumes:
   minify-data:

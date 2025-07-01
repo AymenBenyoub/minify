@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -17,7 +18,7 @@ import (
 const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 type shortenRequest struct {
-	LongURL string `json:long_url`
+	LongURL string `json:"long_url"`
 }
 
 func dbInit() (*sql.DB, error) {
@@ -68,7 +69,7 @@ func main() {
 	}
 	log.Println("redis connected")
 	router := http.NewServeMux()
-	router.HandleFunc("GET /:short", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /{short}", func(w http.ResponseWriter, r *http.Request) {
 		short := r.PathValue("short")
 
 		val, err := redisClient.Get(ctx, short).Result()
@@ -80,16 +81,19 @@ func main() {
 				http.Error(w, "URL not found", http.StatusNotFound)
 				return
 			}
-			http.Redirect(w, r, longURL, http.StatusPermanentRedirect)
+			http.Redirect(w, r, ensureScheme(longURL), http.StatusPermanentRedirect)
 			_, err = db.Exec("UPDATE urls SET click_count = click_count +1 WHERE short_url =$1", short)
 			if err != nil {
 				log.Printf("Failed to update click count for %s: %v", short, err)
-
 			}
+			return
 		} else if err != nil {
+
 			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
 		} else {
-			http.Redirect(w, r, val, http.StatusPermanentRedirect)
+			http.Redirect(w, r, ensureScheme(val), http.StatusPermanentRedirect)
+			return
 		}
 
 	})
@@ -98,16 +102,19 @@ func main() {
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
 		}
 		shortURL, err := shorten(req.LongURL, db)
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
 		err = redisClient.Set(ctx, shortURL, req.LongURL, time.Hour).Err()
 		if err != nil {
 			log.Printf("Redis set failed: %v", err)
 		}
 		json.NewEncoder(w).Encode(map[string]string{"short_url": shortURL})
+		return
 	})
 	server := &http.Server{
 		Addr:         ":8080",
@@ -168,4 +175,10 @@ func base62Encode(n int) string {
 		n = n / 62
 	}
 	return string(result)
+}
+func ensureScheme(url string) string {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		return url
+	}
+	return "https://" + url
 }
