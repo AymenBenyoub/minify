@@ -1,0 +1,171 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
+)
+
+const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+type shortenRequest struct {
+	LongURL string `json:long_url`
+}
+
+func dbInit() (*sql.DB, error) {
+	dbUrl := os.Getenv("DATABASE_URL")
+	if dbUrl == "" {
+		dbUrl = "postgres://postgres:password@localhost:5432/postgres?sslmode=disable"
+	}
+	db, err := sql.Open("postgres", dbUrl)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+func redisInit() (*redis.Client, context.Context, error) {
+	ctx := context.Background()
+	redisUrl := os.Getenv("REDIS_URL")
+	if redisUrl == "" {
+		redisUrl = "redis://localhost:6379"
+	}
+	opt, err := redis.ParseURL(redisUrl)
+	if err != nil {
+		return nil, nil, err
+	}
+	client := redis.NewClient(opt)
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, nil, err
+	}
+
+	return client, ctx, nil
+}
+func main() {
+	db, err := dbInit()
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	log.Println("DB connected")
+
+	redisClient, ctx, err := redisInit()
+	if err != nil {
+		log.Fatalf("Failed to connect to redis: %v", err)
+	}
+	log.Println("redis connected")
+	router := http.NewServeMux()
+	router.HandleFunc("GET /:short", func(w http.ResponseWriter, r *http.Request) {
+		short := r.PathValue("short")
+
+		val, err := redisClient.Get(ctx, short).Result()
+		if err != redis.Nil {
+			var longURL string
+			log.Println("url not found in cache")
+			err := db.QueryRow("SELECT long_url FROM urls WHERE short_url = $1", short).Scan(&longURL)
+			if err != nil {
+				http.Error(w, "URL not found", http.StatusNotFound)
+				return
+			}
+			http.Redirect(w, r, longURL, http.StatusPermanentRedirect)
+			_, err = db.Exec("UPDATE urls SET click_count = click_count +1 WHERE short_url =$1", short)
+			if err != nil {
+				log.Printf("Failed to update click count for %s: %v", short, err)
+
+			}
+		} else if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		} else {
+			http.Redirect(w, r, val, http.StatusPermanentRedirect)
+		}
+
+	})
+	router.HandleFunc("POST /shorten", func(w http.ResponseWriter, r *http.Request) {
+		var req shortenRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+		}
+		shortURL, err := shorten(req.LongURL, db)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+		err = redisClient.Set(ctx, shortURL, req.LongURL, time.Hour).Err()
+		if err != nil {
+			log.Printf("Redis set failed: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"short_url": shortURL})
+	})
+	server := &http.Server{
+		Addr:         ":8080",
+		Handler:      router,
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	go func() {
+		log.Println("Server running on port 8080")
+		log.Fatal(server.ListenAndServe())
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// context to give current requests time to finish
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited cleanly")
+}
+
+func shorten(long string, db *sql.DB) (string, error) {
+
+	var id int
+	err := db.QueryRow("INSERT INTO urls (long_url) VALUES($1) RETURNING id", long).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+
+	short := base62Encode(id)
+	_, err = db.Exec("UPDATE urls SET short_url =$1 WHERE id = $2", short, id)
+	if err != nil {
+		return "", err
+	}
+
+	return short, nil
+}
+
+func base62Encode(n int) string {
+	if n == 0 {
+		return string(charset[0])
+	}
+
+	var result []byte
+	for n > 0 {
+		r := n % 62
+		result = append([]byte{charset[r]}, result...)
+		n = n / 62
+	}
+	return string(result)
+}
