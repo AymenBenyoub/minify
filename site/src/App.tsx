@@ -19,9 +19,9 @@ function App() {
 
     setIsLoading(true)
     setError("")
-
+    const shorten_url = import.meta.env.VITE_MINI_LINK_DOMAIN + "/shorten"
     try {
-      const response = await fetch("http://localhost:8080/shorten", {
+      const response = await fetch(shorten_url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
