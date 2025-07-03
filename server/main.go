@@ -108,7 +108,7 @@ func main() {
 
 	})
 	router.HandleFunc("POST /shorten", func(w http.ResponseWriter, r *http.Request) {
-		
+
 		var req shortenRequest
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
@@ -126,18 +126,21 @@ func main() {
 		} else {
 			log.Println("redis set ouccered")
 		}
-		short_url := fmt.Sprintf("%s/%s", os.Getenv("mini_link_domain"), short_code)
-		
+		short_url := fmt.Sprintf("%s/%s", os.Getenv("MINI_LINK_DOMAIN"), short_code)
+
 		json.NewEncoder(w).Encode(map[string]string{"short_url": short_url})
 		return
 	})
-	
 
-	
-	
+	router.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+	})
+
 	server := &http.Server{
 		Addr:         ":8080",
-		Handler:     corsMiddleware( log_middleware(router)),
+		Handler:      corsMiddleware(log_middleware(router)),
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -168,7 +171,7 @@ func main() {
 func shorten(long string, db *sql.DB) (string, error) {
 
 	var id int
-	
+
 	err := db.QueryRow("INSERT INTO urls (long_url) VALUES($1) RETURNING id", long).Scan(&id)
 	if err != nil {
 		return "", err
@@ -211,12 +214,11 @@ func log_middleware(next http.Handler) http.Handler {
 }
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		w.Header().Set("Access-Control-Allow-Origin", "https://minify-iota.vercel.app")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-		
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
