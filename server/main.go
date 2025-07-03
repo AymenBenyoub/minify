@@ -42,7 +42,7 @@ func dbInit() (*sql.DB, error) {
 func redisInit() (*redis.Client, context.Context, error) {
 	ctx := context.Background()
 	redisUrl := os.Getenv("REDIS_URL")
-	log.Println("redis url is", redisUrl)
+
 	if redisUrl == "" {
 		redisUrl = "redis://localhost:6379"
 	}

@@ -19,8 +19,9 @@ function App() {
 
     setIsLoading(true)
     setError("")
-    const serverUrl = import.meta.env.VITE_MINI_LINK_DOMAIN
-    const shorten_url =serverUrl + "/shorten"
+    
+    
+    const shorten_url ="https://mn-8g5z.onrender.com/shorten"
     try {
       const response = await fetch(shorten_url, {
         method: "POST",
