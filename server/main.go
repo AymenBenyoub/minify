@@ -41,6 +41,7 @@ func dbInit() (*sql.DB, error) {
 func redisInit() (*redis.Client, context.Context, error) {
 	ctx := context.Background()
 	redisUrl := os.Getenv("REDIS_URL")
+	log.Println("redis url is", redisUrl)
 	if redisUrl == "" {
 		redisUrl = "redis://localhost:6379"
 	}
@@ -73,8 +74,10 @@ func main() {
 		short := r.PathValue("short")
 
 		val, err := redisClient.Get(ctx, short).Result()
-		if err != redis.Nil {
+
+		if err == redis.Nil {
 			var longURL string
+
 			log.Println("url not found in cache")
 			err := db.QueryRow("SELECT long_url FROM urls WHERE short_url = $1", short).Scan(&longURL)
 			if err != nil {
@@ -93,11 +96,18 @@ func main() {
 			return
 		} else {
 			http.Redirect(w, r, ensureScheme(val), http.StatusPermanentRedirect)
+			log.Println("url found in cache")
+			_, err = db.Exec("UPDATE urls SET click_count = click_count +1 WHERE short_url =$1", short)
+			if err != nil {
+				log.Printf("Failed to update click count for %s: %v", short, err)
+			}
+
 			return
 		}
 
 	})
 	router.HandleFunc("POST /shorten", func(w http.ResponseWriter, r *http.Request) {
+		
 		var req shortenRequest
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
@@ -112,13 +122,16 @@ func main() {
 		err = redisClient.Set(ctx, shortURL, req.LongURL, time.Hour).Err()
 		if err != nil {
 			log.Printf("Redis set failed: %v", err)
+		} else {
+			log.Println("redis set ouccered")
 		}
+
 		json.NewEncoder(w).Encode(map[string]string{"short_url": shortURL})
 		return
 	})
 	server := &http.Server{
 		Addr:         ":8080",
-		Handler:      router,
+		Handler:     corsMiddleware( log_middleware(router)),
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -181,4 +194,27 @@ func ensureScheme(url string) string {
 		return url
 	}
 	return "https://" + url
+}
+func log_middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		now := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s %v", r.Method, r.URL.Path, r.RemoteAddr, time.Since(now))
+	})
+}
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
