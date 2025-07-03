@@ -137,7 +137,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 	})
-
+	router.HandleFunc("GET /keep-alive", func(w http.ResponseWriter, r *http.Request) {
+		const expectedSecret = "0aea3e93aAKGA8f3Q"
+		secret := r.URL.Query().Get("ping_secret")
+		if secret != expectedSecret {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
 	server := &http.Server{
 		Addr:         ":8080",
 		Handler:      corsMiddleware(log_middleware(router)),
