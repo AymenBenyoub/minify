@@ -8,20 +8,23 @@ services:
       POSTGRES_PASSWORD: superdupersecret
       POSTGRES_DB: mini
     ports:
+    #assuming you don't have a pg instance running on this port
       - "5433:5432"
     volumes:
       - minify-data:/var/lib/postgresql/data
 
   redis:
     image: redis:latest
+    #assuming you don't have a redis instance running on this port
     ports:
       - "6379:6379"
-
+ 
   app:
     build: .
     environment:
       DATABASE_URL: postgres://mini_user:superdupersecret@db:5432/mini?sslmode=disable
       REDIS_URL: redis://redis:6379
+      mini_link_domain: http://localhost:8080
     ports:
       - "8080:8080"
     depends_on:

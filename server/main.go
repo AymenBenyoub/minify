@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -114,21 +115,26 @@ func main() {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		shortURL, err := shorten(req.LongURL, db)
+		short_code, err := shorten(req.LongURL, db)
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		err = redisClient.Set(ctx, shortURL, req.LongURL, time.Hour).Err()
+		err = redisClient.Set(ctx, short_code, req.LongURL, time.Hour).Err()
 		if err != nil {
 			log.Printf("Redis set failed: %v", err)
 		} else {
 			log.Println("redis set ouccered")
 		}
-
-		json.NewEncoder(w).Encode(map[string]string{"short_url": shortURL})
+		short_url := fmt.Sprintf("%s/%s", os.Getenv("mini_link_domain"), short_code)
+		
+		json.NewEncoder(w).Encode(map[string]string{"short_url": short_url})
 		return
 	})
+	
+
+	
+	
 	server := &http.Server{
 		Addr:         ":8080",
 		Handler:     corsMiddleware( log_middleware(router)),
@@ -162,6 +168,7 @@ func main() {
 func shorten(long string, db *sql.DB) (string, error) {
 
 	var id int
+	
 	err := db.QueryRow("INSERT INTO urls (long_url) VALUES($1) RETURNING id", long).Scan(&id)
 	if err != nil {
 		return "", err
