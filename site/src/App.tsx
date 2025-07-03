@@ -19,11 +19,13 @@ function App() {
 
     setIsLoading(true)
     setError("")
-    
-    
-    const shorten_url ="https://mn-8g5z.onrender.com/shorten"
+
+    const server_url = "https://mn-8g5z.onrender.com"
+    console.log(server_url)
+    const shorten_url = server_url + "/shorten"
+    console.log(shorten_url)
     try {
-      const response = await fetch(shorten_url, {
+      const response = await fetch("https://mn-8g5z.onrender.com/shorten", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -36,7 +38,7 @@ function App() {
       }
 
       const data = await response.json()
-      setShortUrl(serverUrl + "/" + data.short_url)
+      setShortUrl( server_url + "/" + data.short_url)
       setUrl("")
       setCopied(false)
     } catch (err) {
