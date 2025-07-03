@@ -19,7 +19,8 @@ function App() {
 
     setIsLoading(true)
     setError("")
-    const shorten_url = import.meta.env.VITE_MINI_LINK_DOMAIN + "/shorten"
+    const serverUrl = import.meta.env.VITE_MINI_LINK_DOMAIN
+    const shorten_url =serverUrl + "/shorten"
     try {
       const response = await fetch(shorten_url, {
         method: "POST",
@@ -34,7 +35,7 @@ function App() {
       }
 
       const data = await response.json()
-      setShortUrl(data.short_url)
+      setShortUrl(serverUrl + "/" + data.short_url)
       setUrl("")
       setCopied(false)
     } catch (err) {
