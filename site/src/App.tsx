@@ -38,7 +38,7 @@ function App() {
       }
 
       const data = await response.json()
-      setShortUrl( server_url + "/" + data.short_url)
+      setShortUrl(data.short_url)
       setUrl("")
       setCopied(false)
     } catch (err) {
